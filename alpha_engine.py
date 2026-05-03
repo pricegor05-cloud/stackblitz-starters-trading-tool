@@ -1,3 +1,4 @@
+from ai_engine import ai_predict
 import pandas as pd
 import numpy as np
 
@@ -36,6 +37,8 @@ def alpha_engine(market_data):
             continue
 
         df = df.dropna()
+        
+        ai = ai_predict(df)
 
         rsi_series = rsi(df["Close"])
         vwap_series = vwap(df)
@@ -71,7 +74,9 @@ def alpha_engine(market_data):
         else:
             signal = "HOLD"
 
-        signals[ticker] = {
+        signals[ticker] = {"ai_up_prob": ai["ai_up_prob"],
+"ai_down_prob": ai["ai_down_prob"],
+"confidence": ai["confidence"],
             "signal": signal,
             "score": score,
             "price": price,
