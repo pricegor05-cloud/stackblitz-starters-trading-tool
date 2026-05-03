@@ -77,10 +77,26 @@ def alpha_engine(market_data):
         else:
             signal = "HOLD"
 
-        # 🧠 OPTIONS ENGINE (STEP 3)
-        option = options_engine(df, signal)
+        # ⚡ STEP 3 — OPTIONS ENGINE (CORRECT INTEGRATION)
+        option = None
 
-        # 📦 FINAL OUTPUT (STEP 4)
+        if signal in ["CALL", "PUT"]:
+            try:
+                option = options_engine(
+                    ticker=ticker,
+                    price=price,
+                    signal=signal,
+                    rsi=rsi_val,
+                    vwap=vwap_val,
+                    momentum=momentum
+                )
+            except Exception as e:
+                option = {
+                    "error": str(e),
+                    "strategy": "fallback"
+                }
+
+        # 📦 FINAL OUTPUT
         signals[ticker] = {
             "signal": signal,
             "score": score,
@@ -89,9 +105,9 @@ def alpha_engine(market_data):
             "vwap": vwap_val,
 
             # 🧠 AI LAYER
-            "ai_up_prob": ai["ai_up_prob"],
-            "ai_down_prob": ai["ai_down_prob"],
-            "confidence": ai["confidence"],
+            "ai_up_prob": ai.get("ai_up_prob", 0),
+            "ai_down_prob": ai.get("ai_down_prob", 0),
+            "confidence": ai.get("confidence", 0),
 
             # ⚡ OPTIONS ENGINE OUTPUT
             "options": option

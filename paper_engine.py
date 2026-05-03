@@ -14,7 +14,11 @@ class PaperEngine:
         self.bias = 0.0
 
         # 🧠 ML MODEL
-        self.model = RandomForestClassifier(n_estimators=150)
+        self.model = RandomForestClassifier(
+            n_estimators=200,
+            max_depth=8,
+            random_state=42
+        )
         self.model_trained = False
 
         self.load_trades()
@@ -36,7 +40,7 @@ class PaperEngine:
             "result": None,
             "options": options,
 
-            # optional ML features (can be filled later)
+            # ML BASE FEATURES
             "rsi": options.get("rsi", 50),
             "vwap": options.get("vwap", price)
         }
@@ -114,12 +118,32 @@ class PaperEngine:
             json.dump(self.trades, f)
 
     # -------------------------
-    # 🧠 FEATURE ENGINEERING
+    # 🧠 STEP 4A: REGIME DETECTOR
+    # -------------------------
+    def detect_regime(self, price_history):
+
+        if len(price_history) < 10:
+            return 1  # neutral
+
+        returns = np.diff(price_history[-10:]) / price_history[-10:-1]
+
+        volatility = np.std(returns)
+        momentum = np.mean(returns)
+
+        if volatility > 0.02:
+            return 0  # HIGH VOLATILITY
+
+        if abs(momentum) > 0.01:
+            return 2  # TRENDING
+
+        return 1  # RANGING
+
+    # -------------------------
+    # 🧠 FEATURE ENGINEERING (STEP 4B UPGRADED)
     # -------------------------
     def build_features(self, trade):
 
         signal = 1 if trade["signal"] == "CALL" else 0
-
         entry = float(trade["entry"])
 
         rsi = trade.get("rsi", 50)
@@ -129,7 +153,22 @@ class PaperEngine:
 
         bias = self.bias
 
-        return [signal, entry, rsi, vwap_dist, bias]
+        # 🧠 STEP 4C: MARKET CONTEXT
+        price_history = [
+            t["entry"] for t in self.trades[-20:]
+            if t.get("entry") is not None
+        ]
+
+        regime = self.detect_regime(price_history)
+
+        return [
+            signal,
+            entry,
+            rsi,
+            vwap_dist,
+            bias,
+            regime   # ⭐ NEW POWER FEATURE
+        ]
 
     # -------------------------
     # 🧠 TRAIN MODEL
