@@ -2,7 +2,7 @@ from paper_engine import PaperEngine
 import yfinance as yf
 import pandas as pd
 from alpha_engine import alpha_engine
-from ai_engine import ai_predict   # ✅ FIXED IMPORT
+from ai_engine import ai_predict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,6 +16,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# =========================================================
+# 🧠 GLOBAL CACHE + HOT STOCK SYSTEM
+# =========================================================
+stock_cache = {}
+hot_stocks = set()
 
 # -------------------------
 # MARKET DATA
@@ -62,8 +68,6 @@ def get_market_data():
 def scan():
 
     market = get_market_data()
-
-    # ✅ FIX: pass ai_predict correctly
     signals = alpha_engine(market, ai_predict)
 
     results = {}
@@ -73,6 +77,11 @@ def scan():
 
         price = sig["price"]
         market_prices[ticker] = price
+
+        # 🧠 HOT STOCK DETECTION (FIXED PLACEMENT)
+        if sig.get("confidence", 0) > 0.78:
+            hot_stocks.add(ticker)
+            stock_cache[ticker] = sig
 
         # 🧠 AI SCORE
         ai_score = engine.predict_success(
@@ -100,10 +109,51 @@ def scan():
             "bias": engine.bias
         }
 
-    # 🧠 UPDATE ENGINE
     engine.update(market_prices)
 
     return results
+
+
+# -------------------------
+# 🟡 HOT STOCKS ENDPOINT
+# -------------------------
+@app.get("/hot")
+def hot():
+    return list(hot_stocks)
+
+
+# -------------------------
+# 🟢 ON-DEMAND STOCK FETCH
+# -------------------------
+@app.get("/stock/{ticker}")
+def stock(ticker: str):
+
+    ticker = ticker.upper()
+
+    if ticker in stock_cache:
+        return stock_cache[ticker]
+
+    try:
+        df = yf.download(ticker, period="5d", interval="5m", progress=False)
+
+        if df is None or df.empty:
+            return {"error": "no data"}
+
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        df = df.dropna()
+
+        data = {"df": df}
+
+        sig = alpha_engine(data, ai_predict)[ticker]
+
+        stock_cache[ticker] = sig
+
+        return sig
+
+    except Exception:
+        return {"error": "failed to load stock"}
 
 
 # -------------------------
