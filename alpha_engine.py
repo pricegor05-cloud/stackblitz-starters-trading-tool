@@ -29,6 +29,7 @@ def alpha_engine(market_data):
      vwap_series = vwap(df)
 
      rsi_val = float(rsi_series.iloc[-1])
+     
      vwap_val = float(vwap_series.iloc[-1])
 
      momentum = float(df["Close"].iloc[-1] - df["Close"].iloc[-5])
