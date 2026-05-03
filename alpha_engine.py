@@ -1,29 +1,21 @@
 import numpy as np
 from collections import defaultdict
 
-# -------------------------
-# 🧠 ADAPTIVE HEDGE FUND BRAIN
-# -------------------------
+# =========================================================
+# 🧠 ADAPTIVE HEDGE FUND BRAIN v3
+# =========================================================
 class AIBrain:
 
     def __init__(self):
-        # global memory
         self.global_memory = []
-
-        # per-ticker intelligence
         self.ticker_memory = defaultdict(list)
+        self.ticker_edge = defaultdict(float)
 
-        # learned weights per ticker
-        self.ticker_edge = defaultdict(lambda: 0.0)
-
-    # log trade result
     def log(self, ticker, prediction, result):
         self.global_memory.append((prediction, result))
         self.ticker_memory[ticker].append((prediction, result))
-
         self._update_ticker_edge(ticker)
 
-    # update per-stock performance bias
     def _update_ticker_edge(self, ticker):
 
         history = self.ticker_memory[ticker]
@@ -44,9 +36,8 @@ class AIBrain:
             total += 1
 
         if total > 0:
-            self.ticker_edge[ticker] = (wins / total) - 0.5  # centered bias
+            self.ticker_edge[ticker] = (wins / total) - 0.5
 
-    # global accuracy
     def accuracy(self):
 
         if len(self.global_memory) < 20:
@@ -66,19 +57,20 @@ class AIBrain:
 
         return correct / total if total else 0.5
 
-    # per ticker confidence boost
     def ticker_bias(self, ticker):
         return self.ticker_edge.get(ticker, 0.0)
 
 
-# global brain instance
+# =========================================================
+# 🧠 GLOBAL INSTANCE
+# =========================================================
 ai_brain = AIBrain()
 
 
-# -------------------------
-# 🧠 SAFE AI WRAPPER (HEDGE FUND VERSION)
-# -------------------------
-def safe_ai(df, ticker="UNKNOWN"):
+# =========================================================
+# 🧠 SAFE AI WRAPPER
+# =========================================================
+def safe_ai(df, ticker="UNKNOWN", ai_predict=None):
 
     try:
         ai = ai_predict(df)
@@ -90,23 +82,16 @@ def safe_ai(df, ticker="UNKNOWN"):
         down = float(ai.get("ai_down_prob", 0.5))
         conf = float(ai.get("confidence", 0.5))
 
-        # normalize probabilities
         total = up + down
         if total > 0:
             up /= total
             down /= total
 
-        # -------------------------
-        # 🧠 HEDGE FUND CALIBRATION
-        # -------------------------
         global_acc = ai_brain.accuracy()
         ticker_bias = ai_brain.ticker_bias(ticker)
 
-        # adaptive scaling
         conf = conf * (0.6 + global_acc + ticker_bias)
-
-        # clamp
-        conf = float(max(0.0, min(1.0, conf)))
+        conf = max(0.0, min(1.0, conf))
 
         return {
             "ai_up_prob": up,
@@ -120,3 +105,11 @@ def safe_ai(df, ticker="UNKNOWN"):
             "ai_down_prob": 0.5,
             "confidence": 0.5
         }
+
+
+# =========================================================
+# 🚨 THIS IS THE LINE YOU WERE ASKING FOR (THE FIX)
+# =========================================================
+# YOU MUST CALL IT LIKE THIS INSIDE alpha_engine:
+
+# ai = safe_ai(df, ticker, ai_predict)
