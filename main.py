@@ -91,3 +91,38 @@ def scan():
     engine.update(market_prices)
 
     return results
+    @app.get("/stats")
+def stats():
+
+    trades = engine.trades
+
+    # only completed trades
+    completed = [t for t in trades if t.get("result") is not None]
+
+    total = len(completed)
+    wins = len([t for t in completed if t.get("result") == "WIN"])
+    losses = len([t for t in completed if t.get("result") == "LOSS"])
+
+    win_rate = wins / total if total > 0 else 0
+
+    # average PnL (simple proxy using entry/exit)
+    pnl_list = []
+
+    for t in completed:
+        if t.get("exit") is not None:
+            if t["signal"] == "CALL":
+                pnl = t["exit"] - t["entry"]
+            else:
+                pnl = t["entry"] - t["exit"]
+            pnl_list.append(pnl)
+
+    avg_pnl = sum(pnl_list) / len(pnl_list) if pnl_list else 0
+
+    return {
+        "total_trades": total,
+        "wins": wins,
+        "losses": losses,
+        "win_rate": win_rate,
+        "bias": engine.bias,
+        "avg_pnl": avg_pnl
+    }
