@@ -1,3 +1,6 @@
+from paper_engine import PaperEngine
+
+engine = PaperEngine()
 import yfinance as yf
 import pandas as pd
 from alpha_engine import alpha_engine
@@ -48,4 +51,43 @@ def scan():
     market = get_market_data()
     signals = alpha_engine(market)
 
-    return signals
+    results = {}
+
+    market_prices = {}
+
+    for ticker, sig in signals.items():
+
+        price = sig["price"]
+        market_prices[ticker] = price
+
+        # 🧠 GET LEARNING PREDICTION (STEP 3 CONNECTED)
+        ai_score = engine.predict_success(
+            sig["signal"],
+            price
+        )
+
+        # 🧠 PAPER TRADE EXECUTION
+        trade = engine.execute(
+            ticker,
+            sig["signal"],
+            price,
+            sig.get("options", {})
+        )
+
+        results[ticker] = {
+            **sig,
+
+            # 💰 PAPER TRADING
+            "paper_trade": trade,
+
+            # 🧠 LEARNING OUTPUT
+            "ai_trade_score": ai_score,
+
+            # 📊 SYSTEM STATE
+            "bias": engine.bias
+        }
+
+    # 🧠 STEP 4 — UPDATE LEARNING ENGINE
+    engine.update(market_prices)
+
+    return results
