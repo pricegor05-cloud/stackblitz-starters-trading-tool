@@ -5,7 +5,11 @@ def get_market_data():
 
     for t in tickers:
         df = yf.download(t, period="5d", interval="5m")
+df = df.copy()
 
+# flatten possible MultiIndex from yfinance
+if isinstance(df.columns, pd.MultiIndex):
+    df.columns = df.columns.get_level_values(0)
         if df is None or df.empty:
             continue
 

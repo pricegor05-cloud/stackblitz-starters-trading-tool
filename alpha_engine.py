@@ -34,8 +34,9 @@ def alpha_engine(market_data):
 
         rsi_series = rsi(df["Close"])
         vwap_series = vwap(df)
-
-        price = float(df["Close"].iloc[-1])
+def last_value(series):
+    return float(series.squeeze().dropna().iloc[-1])
+        price = float(df["Close"].squeeze().dropna().iloc[-1])
         rsi_val = float(rsi_series.iloc[-1])
         vwap_val = float(vwap_series.iloc[-1])
 
