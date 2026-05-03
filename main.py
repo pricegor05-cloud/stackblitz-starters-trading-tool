@@ -18,7 +18,12 @@ app.add_middleware(
 
 
 def get_market_data():
-    tickers = ["AAPL", "TSLA", "NVDA", "SPY"]
+    tickers = [
+    "AAPL","TSLA","NVDA","SPY",
+    "MSFT","AMZN","META","GOOGL",
+    "AMD","NFLX","PLTR","INTC",
+    "COIN","NIO","RIVN","QQQ"
+]
 
     data = {}
 
