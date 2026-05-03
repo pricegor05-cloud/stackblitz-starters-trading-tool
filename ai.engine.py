@@ -11,36 +11,30 @@ def ai_predict(df):
             "confidence": 0.0
         }
 
-    # simple feature engineering (no ML training needed yet)
-
     returns = np.diff(close)
 
     momentum = np.mean(returns[-5:])
     volatility = np.std(returns[-10:])
 
-    price_trend = close[-1] - close[-10]
+    trend = close[-1] - close[-10]
 
     score = 0
 
-    # trend
-    if price_trend > 0:
+    if trend > 0:
         score += 1
     else:
         score -= 1
 
-    # momentum
     if momentum > 0:
         score += 1
     else:
         score -= 1
 
-    # volatility filter (too high = uncertain)
     if volatility < np.std(close) * 0.5:
         score += 1
     else:
         score -= 0.5
 
-    # convert score → probability
     ai_up = 1 / (1 + np.exp(-score))
     ai_down = 1 - ai_up
 
