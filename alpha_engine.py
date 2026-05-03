@@ -75,7 +75,8 @@ def alpha_engine(market_data):
 
     return signals
     def last(x):
-    return float(x.dropna().iloc[-1])
-    price = last(df["Close"])
-    rsi_val = last(rsi_series)
-    vwap_val = last(vwap_series)       
+return float(x.dropna().iloc[-1])
+
+price = last(df["Close"])
+rsi_val = last(rsi_series)
+vwap_val = last(vwap_series)       
