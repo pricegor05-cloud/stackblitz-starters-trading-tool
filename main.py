@@ -70,7 +70,7 @@ def scan():
         )
 if trade:
     trade["ai_score"] = ai_score  # or confidence (depending on your variable name)
-        results[ticker] = {
+    results[ticker] = {
             **sig,
             "paper_trade": trade,
             "ai_trade_score": ai_score,
