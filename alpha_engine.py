@@ -24,10 +24,14 @@ def alpha_engine(market_data):
         df["VWAP"] = vwap(df)
 
         price = df["Close"].iloc[-1]
-        rsi_val = df["RSI"].iloc[-1]
-        vwap_val = df["VWAP"].iloc[-1]
 
-        momentum = df["Close"].iloc[-1] - df["Close"].iloc[-5]
+     rsi_series = rsi(df["Close"])
+     vwap_series = vwap(df)
+
+     rsi_val = float(rsi_series.iloc[-1])
+     vwap_val = float(vwap_series.iloc[-1])
+
+        momentum = float(df["Close"].iloc[-1] - df["Close"].iloc[-5])
 
         score = 0
 
@@ -62,3 +66,12 @@ def alpha_engine(market_data):
         }
 
     return signals
+    
+    print(type(rsi_val), rsi_val)
+    print(type(vwap_val), vwap_val)
+
+def last_value(x):
+    return float(x.dropna().iloc[-1])
+    
+    rsi_val = last_value(rsi_series)
+vwap_val = last_value(vwap_series)
