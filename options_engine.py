@@ -1,42 +1,79 @@
 import math
+import numpy as np
 
 def options_engine(df, signal):
 
-    price = df["Close"].iloc[-1]
+    try:
+        if df is None or df.empty or "Close" not in df:
+            return {
+                "strategy": "NONE",
+                "strike": None,
+                "expiry": None,
+                "style": None
+            }
 
-    # --- STRIKE SELECTION (nearest standard strike)
-    strike_step = 5
-    strike = round(price / strike_step) * strike_step
+        close = df["Close"].dropna()
 
-    # --- EXPIRY LOGIC (simple volatility-based)
-    volatility = df["Close"].pct_change().std()
+        if len(close) < 10:
+            return {
+                "strategy": "NONE",
+                "strike": None,
+                "expiry": None,
+                "style": None
+            }
 
-    if volatility > 0.02:
-        expiry = "0DTE-1D"   # fast scalp
-        style = "scalp"
-    elif volatility > 0.01:
-        expiry = "3-5D"
-        style = "swing"
-    else:
-        expiry = "7-14D"
-        style = "swing"
+        price = float(close.iloc[-1])
 
-    # --- SIGNAL MAPPING
-    if signal == "CALL":
-        direction = "CALL"
-    elif signal == "PUT":
-        direction = "PUT"
-    else:
+        # -------------------------
+        # STRIKE SELECTION
+        # -------------------------
+        strike_step = 5
+        strike = round(price / strike_step) * strike_step
+
+        # -------------------------
+        # VOLATILITY (SAFE)
+        # -------------------------
+        returns = close.pct_change().dropna()
+
+        volatility = float(returns.std()) if len(returns) > 2 else 0.01
+
+        # -------------------------
+        # EXPIRY LOGIC
+        # -------------------------
+        if volatility > 0.02:
+            expiry = "0DTE-1D"
+            style = "scalp"
+
+        elif volatility > 0.01:
+            expiry = "3-5D"
+            style = "swing"
+
+        else:
+            expiry = "7-14D"
+            style = "swing"
+
+        # -------------------------
+        # SIGNAL MAPPING
+        # -------------------------
+        if signal not in ["CALL", "PUT"]:
+            return {
+                "strategy": "NONE",
+                "strike": None,
+                "expiry": None,
+                "style": None
+            }
+
+        return {
+            "strategy": signal,
+            "strike": float(strike),
+            "expiry": expiry,
+            "style": style
+        }
+
+    except Exception:
         return {
             "strategy": "NONE",
             "strike": None,
             "expiry": None,
             "style": None
         }
-
-    return {
-        "strategy": direction,
-        "strike": float(strike),
-        "expiry": expiry,
-        "style": style
-    }

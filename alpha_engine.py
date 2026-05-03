@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from collections import defaultdict
 
 # =========================================================
@@ -91,7 +92,7 @@ def safe_ai(df, ticker="UNKNOWN", ai_predict=None):
         ticker_bias = ai_brain.ticker_bias(ticker)
 
         conf = conf * (0.6 + global_acc + ticker_bias)
-        conf = max(0.0, min(1.0, conf))
+        conf = float(max(0.0, min(1.0, conf)))
 
         return {
             "ai_up_prob": up,
@@ -108,8 +109,96 @@ def safe_ai(df, ticker="UNKNOWN", ai_predict=None):
 
 
 # =========================================================
-# 🚨 THIS IS THE LINE YOU WERE ASKING FOR (THE FIX)
+# 📊 INDICATORS
 # =========================================================
-# YOU MUST CALL IT LIKE THIS INSIDE alpha_engine:
+def rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = (-delta.clip(upper=0)).rolling(period).mean()
+    rs = gain / loss.replace(0, np.nan)
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.fillna(50)
 
-# ai = safe_ai(df, ticker, ai_predict)
+
+def vwap(df):
+    return (df["Close"] * df["Volume"]).cumsum() / df["Volume"].cumsum()
+
+
+def last_value(series):
+    return float(series.dropna().iloc[-1])
+
+
+# =========================================================
+# 🧠 MAIN ENGINE
+# =========================================================
+def alpha_engine(market_data, ai_predict=None):
+
+    signals = {}
+
+    for ticker, data in market_data.items():
+
+        df = data.get("df")
+
+        if df is None or df.empty or len(df) < 20:
+            signals[ticker] = {
+                "signal": "NO_DATA",
+                "price": 0,
+                "rsi": 50,
+                "vwap": 0,
+                "ai_up_prob": 0.5,
+                "ai_down_prob": 0.5,
+                "confidence": 0.5,
+                "options": {"strategy": "none"}
+            }
+            continue
+
+        df = df.dropna()
+
+        # 🧠 AI LAYER
+        ai = safe_ai(df, ticker, ai_predict)
+
+        # 📊 INDICATORS (SAFE)
+        price = last_value(df["Close"])
+        rsi_val = last_value(rsi(df["Close"]))
+        vwap_val = last_value(vwap(df))
+
+        try:
+            momentum = float(df["Close"].iloc[-1] - df["Close"].iloc[-5])
+        except:
+            momentum = 0.0
+
+        # ⚡ SCORE ENGINE
+        score = 0
+        score += 1 if price > vwap_val else -1
+
+        if rsi_val < 35:
+            score += 2
+        elif rsi_val > 70:
+            score -= 2
+
+        score += 1 if momentum > 0 else -1
+
+        # 📌 SIGNAL
+        if score >= 2:
+            signal = "CALL"
+        elif score <= -2:
+            signal = "PUT"
+        else:
+            signal = "HOLD"
+
+        # 📦 OUTPUT (ALWAYS SAFE)
+        signals[ticker] = {
+            "signal": signal,
+            "score": score,
+            "price": price,
+            "rsi": rsi_val,
+            "vwap": vwap_val,
+
+            "ai_up_prob": ai["ai_up_prob"],
+            "ai_down_prob": ai["ai_down_prob"],
+            "confidence": ai["confidence"],
+
+            "options": {"strategy": "basic"}
+        }
+
+    return signals

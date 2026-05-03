@@ -2,6 +2,7 @@ from paper_engine import PaperEngine
 import yfinance as yf
 import pandas as pd
 from alpha_engine import alpha_engine
+from ai_engine import ai_predict   # ✅ FIXED IMPORT
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,7 +17,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# -------------------------
+# MARKET DATA
+# -------------------------
 def get_market_data():
+
     tickers = [
         "AAPL","TSLA","NVDA","SPY",
         "MSFT","AMZN","META","GOOGL",
@@ -27,27 +32,39 @@ def get_market_data():
     data = {}
 
     for t in tickers:
-        df = yf.download(t, period="5d", interval="5m")
-        df = df.copy()
 
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        try:
+            df = yf.download(t, period="5d", interval="5m", progress=False)
 
-        df = df.dropna()
+            if df is None or df.empty:
+                continue
 
-        if df is None or df.empty:
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+
+            df = df.dropna()
+
+            if len(df) < 20:
+                continue
+
+            data[t] = {"df": df}
+
+        except Exception:
             continue
-
-        data[t] = {"df": df}
 
     return data
 
 
+# -------------------------
+# MAIN SCAN ENDPOINT
+# -------------------------
 @app.get("/scan")
 def scan():
 
     market = get_market_data()
-    signals = alpha_engine(market)
+
+    # ✅ FIX: pass ai_predict correctly
+    signals = alpha_engine(market, ai_predict)
 
     results = {}
     market_prices = {}
@@ -57,10 +74,15 @@ def scan():
         price = sig["price"]
         market_prices[ticker] = price
 
-        # 🧠 AI prediction
-        ai_score = engine.predict_success(sig["signal"], price)
+        # 🧠 AI SCORE
+        ai_score = engine.predict_success(
+            sig["signal"],
+            price,
+            sig.get("rsi", 50),
+            sig.get("vwap", price)
+        )
 
-        # 🧠 execute trade
+        # 🧠 EXECUTE TRADE
         trade = engine.execute(
             ticker,
             sig["signal"],
@@ -68,7 +90,6 @@ def scan():
             sig.get("options", {})
         )
 
-        # ✅ FIXED INDENT (THIS WAS YOUR BUG)
         if trade:
             trade["ai_score"] = ai_score
 
@@ -79,12 +100,15 @@ def scan():
             "bias": engine.bias
         }
 
+    # 🧠 UPDATE ENGINE
     engine.update(market_prices)
 
     return results
 
 
-# 🚨 STEP 5 — OUTSIDE scan()
+# -------------------------
+# STATS ENDPOINT
+# -------------------------
 @app.get("/stats")
 def stats():
 

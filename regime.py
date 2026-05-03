@@ -2,24 +2,28 @@ import numpy as np
 
 def detect_market_regime(df):
 
-    close = df["Close"]
+    try:
+        if df is None or df.empty or "Close" not in df:
+            return "RANGING"
 
-    returns = close.pct_change().dropna()
+        close = df["Close"].dropna()
 
-    volatility = returns.std()
+        if len(close) < 20:
+            return "RANGING"
 
-    momentum = (close.iloc[-1] - close.iloc[-10]) / close.iloc[-10]
+        returns = close.pct_change().dropna()
 
-    rsi = 50  # fallback if not passed in (you can improve later)
+        volatility = returns.std()
 
-    # -------------------------
-    # REGIME RULES
-    # -------------------------
+        momentum = (close.iloc[-1] - close.iloc[-10]) / close.iloc[-10]
 
-    if volatility > 0.02:
-        return "HIGH_VOLATILITY"
+        if volatility > 0.025:
+            return "HIGH_VOLATILITY"
 
-    if abs(momentum) > 0.03:
-        return "TRENDING"
+        if abs(momentum) > 0.03:
+            return "TRENDING"
 
-    return "RANGING"
+        return "RANGING"
+
+    except Exception:
+        return "RANGING"
