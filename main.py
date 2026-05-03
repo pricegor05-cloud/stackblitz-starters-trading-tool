@@ -16,21 +16,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 def get_market_data():
     tickers = [
-    "AAPL","TSLA","NVDA","SPY",
-    "MSFT","AMZN","META","GOOGL",
-    "AMD","NFLX","PLTR","INTC",
-    "COIN","NIO","RIVN","QQQ"
-]
+        "AAPL","TSLA","NVDA","SPY",
+        "MSFT","AMZN","META","GOOGL",
+        "AMD","NFLX","PLTR","INTC",
+        "COIN","NIO","RIVN","QQQ"
+    ]
 
     data = {}
 
     for t in tickers:
-
         df = yf.download(t, period="5d", interval="5m")
-
         df = df.copy()
 
         if isinstance(df.columns, pd.MultiIndex):
@@ -60,17 +57,22 @@ def scan():
         price = sig["price"]
         market_prices[ticker] = price
 
+        # 🧠 AI prediction
         ai_score = engine.predict_success(sig["signal"], price)
 
+        # 🧠 execute trade
         trade = engine.execute(
             ticker,
             sig["signal"],
             price,
             sig.get("options", {})
         )
-if trade:
-    trade["ai_score"] = ai_score  # or confidence (depending on your variable name)
-    results[ticker] = {
+
+        # ✅ FIXED INDENT (THIS WAS YOUR BUG)
+        if trade:
+            trade["ai_score"] = ai_score
+
+        results[ticker] = {
             **sig,
             "paper_trade": trade,
             "ai_trade_score": ai_score,
@@ -82,7 +84,7 @@ if trade:
     return results
 
 
-# 🚨 STEP 5 — MUST BE OUTSIDE scan()
+# 🚨 STEP 5 — OUTSIDE scan()
 @app.get("/stats")
 def stats():
 
