@@ -75,26 +75,50 @@ def scan():
 
     for ticker, sig in signals.items():
 
-        price = sig["price"]
+        # safety check (prevents UI crash / grey screen)
+        if not isinstance(sig, dict):
+            continue
+
+        price = sig.get("price", 0)
         market_prices[ticker] = price
 
-        # 🧠 HOT STOCK DETECTION (FIXED PLACEMENT)
-        if sig.get("confidence", 0) > 0.78:
-            hot_stocks.add(ticker)
-            stock_cache[ticker] = sig
+        confidence = sig.get("confidence", 0.5)
 
+       # 🧠 STEP 3: HOT STOCK ENGINE (IMPROVED + SAFE CACHE)
+confidence = float(sig.get("confidence", 0) or 0)
+
+# add AI + signal strength boost
+signal_boost = 0
+if sig.get("signal") in ["CALL", "PUT"]:
+    signal_boost = 0.05
+
+final_score = confidence + signal_boost
+
+# HOT STOCK RULE
+if final_score > 0.78:
+    hot_stocks.add(ticker)
+
+    stock_cache[ticker] = {
+        **sig,
+        "hot_score": final_score
+    }
+
+        # =====================================================
         # 🧠 AI SCORE
+        # =====================================================
         ai_score = engine.predict_success(
-            sig["signal"],
+            sig.get("signal", "HOLD"),
             price,
             sig.get("rsi", 50),
             sig.get("vwap", price)
         )
 
+        # =====================================================
         # 🧠 EXECUTE TRADE
+        # =====================================================
         trade = engine.execute(
             ticker,
-            sig["signal"],
+            sig.get("signal", "HOLD"),
             price,
             sig.get("options", {})
         )
@@ -102,29 +126,22 @@ def scan():
         if trade:
             trade["ai_score"] = ai_score
 
+        # =====================================================
+        # 📦 RESPONSE (IMPORTANT FOR UI)
+        # =====================================================
         results[ticker] = {
             **sig,
+            "price": price,
+            "confidence": confidence,
             "paper_trade": trade,
             "ai_trade_score": ai_score,
-            "bias": engine.bias
+            "bias": engine.bias,
+            "hot": ticker in hot_stocks
         }
 
     engine.update(market_prices)
 
     return results
-
-
-# -------------------------
-# 🟡 HOT STOCKS ENDPOINT
-# -------------------------
-@app.get("/hot")
-def hot():
-    return list(hot_stocks)
-
-
-# -------------------------
-# 🟢 ON-DEMAND STOCK FETCH
-# -------------------------
 @app.get("/stock/{ticker}")
 def stock(ticker: str):
 
