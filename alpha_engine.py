@@ -1,11 +1,17 @@
 import pandas as pd
 
+import numpy as np
+
 def rsi(series, period=14):
     delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = (-delta.clip(upper=0)).rolling(period).mean()
+
+    rs = gain / loss.replace(0, np.nan)
+    rsi = 100 - (100 / (1 + rs))
+
+    return rsi.fillna(50)
 
 
 def vwap(df):
@@ -20,19 +26,20 @@ def alpha_engine(market_data):
 
         df = data["df"]
 
-        df["RSI"] = rsi(df["Close"])
-        df["VWAP"] = vwap(df)
+        if df is None or df.empty:
+            signals[ticker] = {"signal": "NO_DATA"}
+            continue
 
-        price = df["Close"].iloc[-1]
+        df = df.dropna()
 
-     rsi_series = rsi(df["Close"])
-     vwap_series = vwap(df)
+        rsi_series = rsi(df["Close"])
+        vwap_series = vwap(df)
 
-     rsi_val = float(rsi_series.iloc[-1])
-     
-     vwap_val = float(vwap_series.iloc[-1])
+        price = float(df["Close"].iloc[-1])
+        rsi_val = float(rsi_series.iloc[-1])
+        vwap_val = float(vwap_series.iloc[-1])
 
-     momentum = float(df["Close"].iloc[-1] - df["Close"].iloc[-5])
+        momentum = float(df["Close"].iloc[-1] - df["Close"].iloc[-5])
 
         score = 0
 
@@ -61,9 +68,9 @@ def alpha_engine(market_data):
         signals[ticker] = {
             "signal": signal,
             "score": score,
-            "price": float(price),
-            "rsi": float(rsi_val),
-            "vwap": float(vwap_val)
+            "price": price,
+            "rsi": rsi_val,
+            "vwap": vwap_val
         }
 
     return signals
