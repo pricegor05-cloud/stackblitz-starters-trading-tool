@@ -66,9 +66,9 @@ def alpha_engine(market_data):
         }
 
     return signals
-    print(type(rsi_val), rsi_val)
-    print(type(vwap_val), vwap_val)
-    def last_value(x):
-    return float(x.dropna().iloc[-1])
-     rsi_val = last_value(rsi_series)
-     vwap_val = last_value(vwap_series)
+print(type(rsi_val), rsi_val)
+print(type(vwap_val), vwap_val)]
+def last_value(x):
+return float(x.dropna().iloc[-1])
+rsi_val = last_value(rsi_series)
+vwap_val = last_value(vwap_series)
