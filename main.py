@@ -1,4 +1,21 @@
+def get_market_data():
+    tickers = ["AAPL", "TSLA", "NVDA", "SPY"]
+
+    data = {}
+
+    for t in tickers:
+        df = yf.download(t, period="5d", interval="5m")
+
+        if df is None or df.empty:
+            continue
+
+        data[t] = {
+            "df": df
+        }
+
+    return data
 from alpha_engine import alpha_engine
+import yfinance as yf
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import random
