@@ -1,4 +1,3 @@
-ai_brain = AIBrain()
 from sklearn.ensemble import RandomForestClassifier
 import numpy as np
 import json
@@ -20,6 +19,7 @@ class PaperEngine:
             max_depth=8,
             random_state=42
         )
+
         self.model_trained = False
 
         self.load_trades()
@@ -40,8 +40,6 @@ class PaperEngine:
             "exit": None,
             "result": None,
             "options": options,
-
-            # ML BASE FEATURES
             "rsi": options.get("rsi", 50),
             "vwap": options.get("vwap", price)
         }
@@ -93,27 +91,20 @@ class PaperEngine:
                 continue
 
             price = market_prices.get(trade["ticker"])
-
             if price is None:
                 continue
 
             price = float(price)
 
-            # STOP LOSS
             if price <= trade["entry"] * 0.98:
                 trade["exit"] = price
                 trade["result"] = "LOSS"
                 self.bias -= 0.01
 
-            # TAKE PROFIT
             elif price >= trade["entry"] * 1.04:
                 trade["exit"] = price
                 trade["result"] = "WIN"
                 self.bias += 0.01
-if price <= trade["entry"] * 0.98:
-    trade["exit"] = price
-    trade["result"] = "LOSS"
-    self.bias -= 0.01
 
         self.save_all()
         self.train_model()
@@ -125,45 +116,38 @@ if price <= trade["entry"] * 0.98:
     # -------------------------
     # 🧠 STEP 4A: REGIME DETECTOR
     # -------------------------
-    def detect_regime(self, price_history):
+    def detect_regime(self, prices):
 
-        if len(price_history) < 10:
-            return 1  # neutral
+        if len(prices) < 10:
+            return 1
 
-        returns = np.diff(price_history[-10:]) / price_history[-10:-1]
+        returns = np.diff(prices[-10:])
 
         volatility = np.std(returns)
         momentum = np.mean(returns)
 
-        if volatility > 0.02:
-            return 0  # HIGH VOLATILITY
+        if volatility > 2:
+            return 0  # volatile
 
-        if abs(momentum) > 0.01:
-            return 2  # TRENDING
+        if abs(momentum) > 0.5:
+            return 2  # trending
 
-        return 1  # RANGING
+        return 1  # normal
 
     # -------------------------
-    # 🧠 FEATURE ENGINEERING (STEP 4B UPGRADED)
+    # 🧠 FEATURE ENGINEERING
     # -------------------------
     def build_features(self, trade):
 
         signal = 1 if trade["signal"] == "CALL" else 0
         entry = float(trade["entry"])
-
-        rsi = trade.get("rsi", 50)
-        vwap = trade.get("vwap", entry)
+        rsi = float(trade.get("rsi", 50))
+        vwap = float(trade.get("vwap", entry))
 
         vwap_dist = (entry - vwap) / entry
-
         bias = self.bias
 
-        # 🧠 STEP 4C: MARKET CONTEXT
-        price_history = [
-            t["entry"] for t in self.trades[-20:]
-            if t.get("entry") is not None
-        ]
-
+        price_history = [t["entry"] for t in self.trades[-20:]]
         regime = self.detect_regime(price_history)
 
         return [
@@ -172,7 +156,7 @@ if price <= trade["entry"] * 0.98:
             rsi,
             vwap_dist,
             bias,
-            regime   # ⭐ NEW POWER FEATURE
+            regime
         ]
 
     # -------------------------
@@ -180,8 +164,7 @@ if price <= trade["entry"] * 0.98:
     # -------------------------
     def train_model(self):
 
-        X = []
-        y = []
+        X, y = [], []
 
         for t in self.trades:
 
@@ -198,7 +181,7 @@ if price <= trade["entry"] * 0.98:
         self.model_trained = True
 
     # -------------------------
-    # 🧠 REAL ML PREDICTION
+    # 🧠 PREDICTION
     # -------------------------
     def predict_success(self, signal, price, rsi=50, vwap=None):
 
@@ -217,6 +200,4 @@ if price <= trade["entry"] * 0.98:
 
         X = [self.build_features(fake_trade)]
 
-        prob = self.model.predict_proba(X)[0][1]
-
-        return float(prob)
+        return float(self.model.predict_proba(X)[0][1])
