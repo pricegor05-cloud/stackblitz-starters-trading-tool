@@ -18,14 +18,14 @@ app.add_middleware(
 )
 
 # =========================================================
-# 🧠 GLOBAL CACHE + HOT STOCK SYSTEM
+# 🧠 CACHE SYSTEM
 # =========================================================
 stock_cache = {}
 hot_stocks = set()
 
-# -------------------------
+# =========================================================
 # MARKET DATA
-# -------------------------
+# =========================================================
 def get_market_data():
 
     tickers = [
@@ -60,10 +60,9 @@ def get_market_data():
 
     return data
 
-
-# -------------------------
-# MAIN SCAN ENDPOINT
-# -------------------------
+# =========================================================
+# SCAN ENDPOINT
+# =========================================================
 @app.get("/scan")
 def scan():
 
@@ -75,37 +74,20 @@ def scan():
 
     for ticker, sig in signals.items():
 
-        # safety check (prevents UI crash / grey screen)
         if not isinstance(sig, dict):
             continue
 
-        price = sig.get("price", 0)
+        price = float(sig.get("price") or 0)
+        confidence = float(sig.get("confidence") or 0.5)
+
         market_prices[ticker] = price
 
-        confidence = sig.get("confidence", 0.5)
+        # 🟡 HOT STOCK LOGIC
+        if confidence > 0.78:
+            hot_stocks.add(ticker)
+            stock_cache[ticker] = sig
 
-       # 🧠 STEP 3: HOT STOCK ENGINE (IMPROVED + SAFE CACHE)
-confidence = float(sig.get("confidence", 0) or 0)
-
-# add AI + signal strength boost
-signal_boost = 0
-if sig.get("signal") in ["CALL", "PUT"]:
-    signal_boost = 0.05
-
-final_score = confidence + signal_boost
-
-# HOT STOCK RULE
-if final_score > 0.78:
-    hot_stocks.add(ticker)
-
-    stock_cache[ticker] = {
-        **sig,
-        "hot_score": final_score
-    }
-
-        # =====================================================
         # 🧠 AI SCORE
-        # =====================================================
         ai_score = engine.predict_success(
             sig.get("signal", "HOLD"),
             price,
@@ -113,9 +95,7 @@ if final_score > 0.78:
             sig.get("vwap", price)
         )
 
-        # =====================================================
-        # 🧠 EXECUTE TRADE
-        # =====================================================
+        # 💰 PAPER TRADE
         trade = engine.execute(
             ticker,
             sig.get("signal", "HOLD"),
@@ -126,22 +106,65 @@ if final_score > 0.78:
         if trade:
             trade["ai_score"] = ai_score
 
-        # =====================================================
-        # 📦 RESPONSE (IMPORTANT FOR UI)
-        # =====================================================
+        # 🧠 SAFE OUTPUT
         results[ticker] = {
-            **sig,
+            "ticker": ticker,
+            "signal": sig.get("signal", "HOLD"),
             "price": price,
+
             "confidence": confidence,
+            "ai_up_prob": float(sig.get("ai_up_prob") or 0.5),
+            "ai_down_prob": float(sig.get("ai_down_prob") or 0.5),
+
+            "rsi": float(sig.get("rsi") or 50),
+            "vwap": float(sig.get("vwap") or price),
+
+            "score": float(sig.get("score") or 0),
+
             "paper_trade": trade,
-            "ai_trade_score": ai_score,
-            "bias": engine.bias,
+            "ai_trade_score": float(ai_score or 0.5),
+
+            "bias": float(engine.bias or 0),
+
             "hot": ticker in hot_stocks
         }
 
     engine.update(market_prices)
 
+    # 🧠 SAFETY FALLBACK
+    if not results:
+        return {
+            "AAPL": {
+                "ticker": "AAPL",
+                "signal": "HOLD",
+                "price": 0,
+                "confidence": 0.5,
+                "ai_up_prob": 0.5,
+                "ai_down_prob": 0.5,
+                "rsi": 50,
+                "vwap": 0,
+                "score": 0,
+                "paper_trade": None,
+                "ai_trade_score": 0.5,
+                "bias": 0,
+                "hot": False
+            }
+        }
+
     return results
+
+
+# =========================================================
+# HOT STOCKS
+# =========================================================
+@app.get("/hot")
+def hot():
+    return list(hot_stocks)
+
+
+# =========================================================
+# ON DEMAND STOCK
+# =========================================================
 @app.get("/stock/{ticker}")
 def stock(ticker: str):
 
@@ -161,7 +184,7 @@ def stock(ticker: str):
 
         df = df.dropna()
 
-        data = {"df": df}
+        data = {ticker: {"df": df}}
 
         sig = alpha_engine(data, ai_predict)[ticker]
 
@@ -169,37 +192,37 @@ def stock(ticker: str):
 
         return sig
 
-    except Exception:
-        return {"error": "failed to load stock"}
+    except Exception as e:
+        return {"error": str(e)}
 
 
-# -------------------------
-# STATS ENDPOINT
-# -------------------------
+# =========================================================
+# STATS
+# =========================================================
 @app.get("/stats")
 def stats():
 
     trades = engine.trades
 
-    completed = [t for t in trades if t.get("result") is not None]
+    completed = [t for t in trades if t.get("result")]
+
+    wins = len([t for t in completed if t["result"] == "WIN"])
+    losses = len([t for t in completed if t["result"] == "LOSS"])
 
     total = len(completed)
-    wins = len([t for t in completed if t.get("result") == "WIN"])
-    losses = len([t for t in completed if t.get("result") == "LOSS"])
 
-    win_rate = wins / total if total > 0 else 0
+    win_rate = wins / total if total else 0
 
-    pnl_list = []
+    pnl = []
 
     for t in completed:
         if t.get("exit") is not None:
             if t["signal"] == "CALL":
-                pnl = t["exit"] - t["entry"]
+                pnl.append(t["exit"] - t["entry"])
             else:
-                pnl = t["entry"] - t["exit"]
-            pnl_list.append(pnl)
+                pnl.append(t["entry"] - t["exit"])
 
-    avg_pnl = sum(pnl_list) / len(pnl_list) if pnl_list else 0
+    avg_pnl = sum(pnl) / len(pnl) if pnl else 0
 
     return {
         "total_trades": total,
