@@ -1,6 +1,6 @@
 import pandas as pd
-
 import numpy as np
+
 
 def rsi(series, period=14):
     delta = series.diff()
@@ -16,6 +16,11 @@ def rsi(series, period=14):
 
 def vwap(df):
     return (df["Close"] * df["Volume"]).cumsum() / df["Volume"].cumsum()
+
+
+# ✅ MUST BE OUTSIDE EVERYTHING
+def last_value(series):
+    return float(series.squeeze().dropna().iloc[-1])
 
 
 def alpha_engine(market_data):
@@ -34,11 +39,11 @@ def alpha_engine(market_data):
 
         rsi_series = rsi(df["Close"])
         vwap_series = vwap(df)
-def last_value(series):
-    return float(series.squeeze().dropna().iloc[-1])
-        price = float(df["Close"].squeeze().dropna().iloc[-1])
-        rsi_val = float(rsi_series.iloc[-1])
-        vwap_val = float(vwap_series.iloc[-1])
+
+        # ✅ CLEAN SCALAR VALUES
+        price = last_value(df["Close"])
+        rsi_val = last_value(rsi_series)
+        vwap_val = last_value(vwap_series)
 
         momentum = float(df["Close"].iloc[-1] - df["Close"].iloc[-5])
 
