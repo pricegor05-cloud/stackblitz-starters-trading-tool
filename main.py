@@ -1,15 +1,14 @@
 from paper_engine import PaperEngine
-
-engine = PaperEngine()
 import yfinance as yf
 import pandas as pd
 from alpha_engine import alpha_engine
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+engine = PaperEngine()
+
 app = FastAPI()
 
-# allow StackBlitz
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,14 +26,11 @@ def get_market_data():
 
         df = yf.download(t, period="5d", interval="5m")
 
-        # safety copy
         df = df.copy()
 
-        # flatten MultiIndex if needed
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        # remove bad rows
         df = df.dropna()
 
         if df is None or df.empty:
@@ -52,7 +48,6 @@ def scan():
     signals = alpha_engine(market)
 
     results = {}
-
     market_prices = {}
 
     for ticker, sig in signals.items():
@@ -60,13 +55,8 @@ def scan():
         price = sig["price"]
         market_prices[ticker] = price
 
-        # 🧠 GET LEARNING PREDICTION (STEP 3 CONNECTED)
-        ai_score = engine.predict_success(
-            sig["signal"],
-            price
-        )
+        ai_score = engine.predict_success(sig["signal"], price)
 
-        # 🧠 PAPER TRADE EXECUTION
         trade = engine.execute(
             ticker,
             sig["signal"],
@@ -76,27 +66,22 @@ def scan():
 
         results[ticker] = {
             **sig,
-
-            # 💰 PAPER TRADING
             "paper_trade": trade,
-
-            # 🧠 LEARNING OUTPUT
             "ai_trade_score": ai_score,
-
-            # 📊 SYSTEM STATE
             "bias": engine.bias
         }
 
-    # 🧠 STEP 4 — UPDATE LEARNING ENGINE
     engine.update(market_prices)
 
     return results
-    @app.get("/stats")
+
+
+# 🚨 STEP 5 — MUST BE OUTSIDE scan()
+@app.get("/stats")
 def stats():
 
     trades = engine.trades
 
-    # only completed trades
     completed = [t for t in trades if t.get("result") is not None]
 
     total = len(completed)
@@ -105,7 +90,6 @@ def stats():
 
     win_rate = wins / total if total > 0 else 0
 
-    # average PnL (simple proxy using entry/exit)
     pnl_list = []
 
     for t in completed:

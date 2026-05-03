@@ -1,6 +1,7 @@
+from sklearn.ensemble import RandomForestClassifier
+import numpy as np
 import json
 import os
-import numpy as np
 
 DATA_FILE = "trades.json"
 
@@ -8,11 +9,16 @@ DATA_FILE = "trades.json"
 class PaperEngine:
 
     def __init__(self):
-        self.trades = []
-        self.bias = 0.0  # learning signal
 
-        # load past trades
+        self.trades = []
+        self.bias = 0.0
+
+        # 🧠 ML MODEL
+        self.model = RandomForestClassifier(n_estimators=150)
+        self.model_trained = False
+
         self.load_trades()
+        self.train_model()
 
     # -------------------------
     # STEP 1: EXECUTION + SAVE
@@ -28,7 +34,11 @@ class PaperEngine:
             "entry": float(price),
             "exit": None,
             "result": None,
-            "options": options
+            "options": options,
+
+            # optional ML features (can be filled later)
+            "rsi": options.get("rsi", 50),
+            "vwap": options.get("vwap", price)
         }
 
         self.trades.append(trade)
@@ -37,7 +47,7 @@ class PaperEngine:
         return trade
 
     # -------------------------
-    # STEP 2: SAVE TO DATASET
+    # STEP 2: SAVE DATASET
     # -------------------------
     def save_trade(self, trade):
 
@@ -62,7 +72,6 @@ class PaperEngine:
 
         self.trades = data
 
-        # rebuild bias from history
         wins = len([t for t in data if t.get("result") == "WIN"])
         losses = len([t for t in data if t.get("result") == "LOSS"])
 
@@ -97,27 +106,73 @@ class PaperEngine:
                 trade["result"] = "WIN"
                 self.bias += 0.01
 
-        # re-save updated dataset
+        self.save_all()
+        self.train_model()
+
+    def save_all(self):
         with open(DATA_FILE, "w") as f:
             json.dump(self.trades, f)
 
     # -------------------------
-    # 🧠 SIMPLE LEARNING MODEL
+    # 🧠 FEATURE ENGINEERING
     # -------------------------
-    def predict_success(self, signal, price):
+    def build_features(self, trade):
 
-        if len(self.trades) < 20:
+        signal = 1 if trade["signal"] == "CALL" else 0
+
+        entry = float(trade["entry"])
+
+        rsi = trade.get("rsi", 50)
+        vwap = trade.get("vwap", entry)
+
+        vwap_dist = (entry - vwap) / entry
+
+        bias = self.bias
+
+        return [signal, entry, rsi, vwap_dist, bias]
+
+    # -------------------------
+    # 🧠 TRAIN MODEL
+    # -------------------------
+    def train_model(self):
+
+        X = []
+        y = []
+
+        for t in self.trades:
+
+            if t.get("result") not in ["WIN", "LOSS"]:
+                continue
+
+            X.append(self.build_features(t))
+            y.append(1 if t["result"] == "WIN" else 0)
+
+        if len(X) < 25:
+            return
+
+        self.model.fit(X, y)
+        self.model_trained = True
+
+    # -------------------------
+    # 🧠 REAL ML PREDICTION
+    # -------------------------
+    def predict_success(self, signal, price, rsi=50, vwap=None):
+
+        if vwap is None:
+            vwap = price
+
+        fake_trade = {
+            "signal": signal,
+            "entry": price,
+            "rsi": rsi,
+            "vwap": vwap
+        }
+
+        if not self.model_trained:
             return 0.5
 
-        wins = len([t for t in self.trades if t.get("result") == "WIN"])
-        total = len([t for t in self.trades if t.get("result") is not None])
+        X = [self.build_features(fake_trade)]
 
-        win_rate = wins / total if total > 0 else 0.5
+        prob = self.model.predict_proba(X)[0][1]
 
-        bias_factor = self.bias
-
-        signal_factor = 0.05 if signal == "CALL" else -0.05
-
-        score = win_rate + bias_factor + signal_factor
-
-        return float(max(0, min(1, score)))
+        return float(prob)
