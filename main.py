@@ -68,7 +68,8 @@ def scan():
             price,
             sig.get("options", {})
         )
-
+if trade:
+    trade["ai_score"] = ai_score  # or confidence (depending on your variable name)
         results[ticker] = {
             **sig,
             "paper_trade": trade,

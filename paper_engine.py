@@ -1,3 +1,4 @@
+ai_brain = AIBrain()
 from sklearn.ensemble import RandomForestClassifier
 import numpy as np
 import json
@@ -109,6 +110,10 @@ class PaperEngine:
                 trade["exit"] = price
                 trade["result"] = "WIN"
                 self.bias += 0.01
+if price <= trade["entry"] * 0.98:
+    trade["exit"] = price
+    trade["result"] = "LOSS"
+    self.bias -= 0.01
 
         self.save_all()
         self.train_model()
