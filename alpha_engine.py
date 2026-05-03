@@ -1,5 +1,5 @@
 from options_engine import options_engine
-from ai_engine.py import ai_predict
+from ai_engine import ai_predict
 import pandas as pd
 import numpy as np
 
