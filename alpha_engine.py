@@ -4,6 +4,23 @@ import pandas as pd
 import numpy as np
 
 
+# -------------------------
+# STEP 3: TRADE FILTER
+# -------------------------
+def trade_filter(signal, confidence, regime):
+
+    if signal == "HOLD":
+        return False
+
+    if regime == 0:  # high volatility
+        return False
+
+    if confidence < 0.62:
+        return False
+
+    return True
+
+
 def rsi(series, period=14):
     delta = series.diff()
 
@@ -24,7 +41,6 @@ def last_value(series):
     return float(series.squeeze().dropna().iloc[-1])
 
 
-# 🧠 SAFE AI WRAPPER (CRITICAL FIX)
 def safe_ai(df):
     try:
         return ai_predict(df)
@@ -36,6 +52,31 @@ def safe_ai(df):
         }
 
 
+# -------------------------
+# STEP 2: REGIME DETECTOR
+# -------------------------
+def detect_regime(df):
+
+    try:
+        prices = df["Close"].values[-20:]
+
+        returns = np.diff(prices)
+
+        volatility = np.std(returns)
+        trend = np.mean(returns)
+
+        if volatility > 2:
+            return 0  # unstable / chop
+
+        if abs(trend) > 0.5:
+            return 2  # trending
+
+        return 1  # normal
+
+    except:
+        return 1
+
+
 def alpha_engine(market_data):
 
     signals = {}
@@ -44,7 +85,6 @@ def alpha_engine(market_data):
 
         df = data.get("df")
 
-        # 🚨 SAFE EMPTY HANDLING
         if df is None or df.empty or len(df) < 10:
             signals[ticker] = {
                 "signal": "NO_DATA",
@@ -60,7 +100,7 @@ def alpha_engine(market_data):
 
         df = df.dropna()
 
-        # 🧠 AI LAYER (SAFE)
+        # 🧠 AI LAYER
         ai = safe_ai(df)
 
         # 📊 INDICATORS
@@ -71,7 +111,6 @@ def alpha_engine(market_data):
         rsi_val = last_value(rsi_series)
         vwap_val = last_value(vwap_series)
 
-        # ⚡ SAFE MOMENTUM (FIXED CRASH BUG)
         try:
             momentum = float(df["Close"].iloc[-1] - df["Close"].iloc[-5])
         except:
@@ -97,7 +136,12 @@ def alpha_engine(market_data):
         else:
             signal = "HOLD"
 
-        # ⚡ OPTIONS ENGINE (SAFE ALWAYS)
+        # -------------------------
+        # 🔥 STEP 2: REGIME ADDED
+        # -------------------------
+        regime = detect_regime(df)
+
+        # ⚡ OPTIONS ENGINE
         if signal in ["CALL", "PUT"]:
             try:
                 option = options_engine(
@@ -113,7 +157,19 @@ def alpha_engine(market_data):
         else:
             option = {"strategy": "none"}
 
-        # 📦 FINAL OUTPUT (FULL SCHEMA GUARANTEED)
+        # 🧠 FINAL AI CONFIDENCE
+        confidence = ai.get("confidence", 0.5)
+
+        # -------------------------
+        # 🚨 STEP 3: APPLY FILTER
+        # -------------------------
+        allowed = trade_filter(signal, confidence, regime)
+
+        if not allowed:
+            signal = "HOLD"
+            option = {"strategy": "filtered"}
+
+        # 📦 FINAL OUTPUT
         signals[ticker] = {
             "signal": signal,
             "score": score,
@@ -121,12 +177,15 @@ def alpha_engine(market_data):
             "rsi": rsi_val,
             "vwap": vwap_val,
 
-            # 🧠 AI LAYER (ALWAYS PRESENT)
+            # 🧠 AI
             "ai_up_prob": ai.get("ai_up_prob", 0.5),
             "ai_down_prob": ai.get("ai_down_prob", 0.5),
-            "confidence": ai.get("confidence", 0.5),
+            "confidence": confidence,
 
-            # ⚡ OPTIONS ENGINE
+            # ⚡ CONTEXT (NEW)
+            "regime": regime,
+
+            # ⚡ OPTIONS
             "options": option
         }
 
