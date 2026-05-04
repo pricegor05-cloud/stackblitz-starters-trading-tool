@@ -5,8 +5,11 @@ from alpha_engine import alpha_engine
 from ai_engine import ai_predict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from paper_engine import PaperEngine, ExecutionLayer
 
 engine = PaperEngine()
+
+exec_layer = ExecutionLayer()
 
 app = FastAPI()
 
@@ -76,6 +79,8 @@ def scan():
 
         price = float(sig.get("price", 0))
         confidence = float(sig.get("confidence", 0.5))
+        ai_up = float(sig.get("ai_up_prob", 0.5))
+        ai_down = float(sig.get("ai_down_prob", 0.5))
 
         market_prices[ticker] = price
 
@@ -84,13 +89,25 @@ def scan():
             hot_stocks.add(ticker)
             stock_cache[ticker] = sig
 
-        # 🧠 PAPER ENGINE
-        trade = engine.execute(
-            ticker,
-            sig.get("signal", "HOLD"),
-            price,
-            sig.get("options", {})
-        )
+        # =========================
+        # V12 EXECUTION LAYER (FIXED)
+        # =========================
+        trade = None
+
+        if (
+            confidence > 0.72
+            and sig.get("signal") in ["CALL", "PUT"]
+        ):
+
+            if (sig["signal"] == "CALL" and ai_up > 0.55) or \
+               (sig["signal"] == "PUT" and ai_down > 0.55):
+
+                trade = exec_layer.enter(
+                    ticker,
+                    sig["signal"],
+                    price,
+                    confidence
+                )
 
         # 🧠 AI SCORE
         ai_score = engine.predict_success(
@@ -112,8 +129,8 @@ def scan():
             "price": price,
 
             "confidence": confidence,
-            "ai_up_prob": float(sig.get("ai_up_prob", 0.5)),
-            "ai_down_prob": float(sig.get("ai_down_prob", 0.5)),
+            "ai_up_prob": ai_up,
+            "ai_down_prob": ai_down,
 
             "rsi": float(sig.get("rsi", 50)),
             "vwap": float(sig.get("vwap", price)),
@@ -127,6 +144,7 @@ def scan():
         }
 
     engine.update(market_prices)
+    exec_layer.update(market_prices)
 
     return results
 
