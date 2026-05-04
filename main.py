@@ -5,6 +5,7 @@ from alpha_engine import alpha_engine
 from ai_engine import ai_predict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime
 
 engine = PaperEngine()
 exec_layer = ExecutionLayer()
@@ -19,10 +20,17 @@ app.add_middleware(
 )
 
 # =========================
-# GLOBAL MEMORY
+# GLOBAL STATE (V13 CORE)
 # =========================
 stock_cache = {}
 hot_stocks = set()
+
+portfolio = {
+    "balance": 10000,
+    "equity_curve": [],
+    "open_positions": {},
+    "closed_trades": []
+}
 
 WATCHLIST = [
     "AAPL","TSLA","NVDA","SPY","MSFT","AMZN","META","GOOGL",
@@ -59,7 +67,40 @@ def get_market_data():
 
 
 # =========================
-# SCAN ENGINE
+# POSITION TRACKING (V13)
+# =========================
+def update_portfolio(market_prices):
+
+    for ticker, pos in list(portfolio["open_positions"].items()):
+
+        price = market_prices.get(ticker)
+        if price is None:
+            continue
+
+        entry = pos["entry"]
+
+        # simple PnL logic
+        if pos["signal"] == "CALL":
+            pnl = (price - entry)
+        else:
+            pnl = (entry - price)
+
+        pos["pnl"] = pnl
+
+        # exit logic
+        if pnl <= -1.0:
+            pos["status"] = "LOSS"
+            portfolio["closed_trades"].append(pos)
+            del portfolio["open_positions"][ticker]
+
+        elif pnl >= 2.0:
+            pos["status"] = "WIN"
+            portfolio["closed_trades"].append(pos)
+            del portfolio["open_positions"][ticker]
+
+
+# =========================
+# SCAN ENGINE (V13 CORE)
 # =========================
 @app.get("/scan")
 def scan():
@@ -77,29 +118,20 @@ def scan():
 
         price = float(sig.get("price", 0))
         confidence = float(sig.get("confidence", 0.5))
-        ai_up = float(sig.get("ai_up_prob", 0.5))
-        ai_down = float(sig.get("ai_down_prob", 0.5))
 
         market_prices[ticker] = price
 
-        # 🔥 HOT STOCKS
+        # HOT STOCKS
         if confidence > 0.78:
             hot_stocks.add(ticker)
             stock_cache[ticker] = sig
 
-        # =========================
-        # EXECUTION LAYER (SAFE)
-        # =========================
         trade = None
 
         try:
-            if (
-                confidence > 0.72
-                and sig.get("signal") in ["CALL", "PUT"]
-            ):
+            if confidence > 0.72 and sig.get("signal") in ["CALL", "PUT"]:
 
-                if (sig["signal"] == "CALL" and ai_up > 0.55) or \
-                   (sig["signal"] == "PUT" and ai_down > 0.55):
+                if ticker not in portfolio["open_positions"]:
 
                     trade = exec_layer.enter(
                         ticker,
@@ -107,10 +139,20 @@ def scan():
                         price,
                         confidence
                     )
+
+                    if trade:
+                        portfolio["open_positions"][ticker] = {
+                            "ticker": ticker,
+                            "signal": sig["signal"],
+                            "entry": price,
+                            "time": str(datetime.utcnow()),
+                            "status": "OPEN",
+                            "pnl": 0
+                        }
+
         except:
             trade = None
 
-        # 🧠 AI SCORE
         ai_score = engine.predict_success(
             sig.get("signal", "HOLD"),
             price,
@@ -118,21 +160,18 @@ def scan():
             sig.get("vwap", price)
         )
 
-        if trade:
-            trade["ai_score"] = ai_score
-
         results[ticker] = {
             "ticker": ticker,
             "signal": sig.get("signal", "HOLD"),
             "price": price,
-
             "confidence": confidence,
-            "ai_up_prob": ai_up,
-            "ai_down_prob": ai_down,
 
-            "rsi": float(sig.get("rsi", 50)),
-            "vwap": float(sig.get("vwap", price)),
-            "score": float(sig.get("score", 0)),
+            "ai_up_prob": sig.get("ai_up_prob", 0.5),
+            "ai_down_prob": sig.get("ai_down_prob", 0.5),
+
+            "rsi": sig.get("rsi", 50),
+            "vwap": sig.get("vwap", price),
+            "score": sig.get("score", 0),
 
             "paper_trade": trade,
             "ai_trade_score": float(ai_score),
@@ -143,11 +182,11 @@ def scan():
     engine.update(market_prices)
     exec_layer.update(market_prices)
 
-    # =========================
-    # 🚨 CRITICAL FIX: NEVER RETURN EMPTY
-    # =========================
+    update_portfolio(market_prices)
+
+    # NEVER EMPTY RESPONSE
     if not results:
-        results = {
+        return {
             "AAPL": {
                 "ticker": "AAPL",
                 "signal": "HOLD",
@@ -155,25 +194,7 @@ def scan():
                 "confidence": 0.5,
                 "ai_up_prob": 0.5,
                 "ai_down_prob": 0.5,
-                "rsi": 50,
-                "vwap": 0,
-                "score": 0,
                 "paper_trade": None,
-                "ai_trade_score": 0.5,
-                "hot": False
-            },
-            "TSLA": {
-                "ticker": "TSLA",
-                "signal": "HOLD",
-                "price": 0,
-                "confidence": 0.5,
-                "ai_up_prob": 0.5,
-                "ai_down_prob": 0.5,
-                "rsi": 50,
-                "vwap": 0,
-                "score": 0,
-                "paper_trade": None,
-                "ai_trade_score": 0.5,
                 "hot": False
             }
         }
@@ -190,7 +211,34 @@ def hot():
 
 
 # =========================
-# ON DEMAND STOCK
+# PORTFOLIO (NEW V13 FEATURE)
+# =========================
+@app.get("/portfolio")
+def get_portfolio():
+    return portfolio
+
+
+# =========================
+# EQUITY CURVE (NEW V13 FEATURE)
+# =========================
+@app.get("/equity")
+def equity():
+
+    total_pnl = sum([
+        t.get("pnl", 0)
+        for t in portfolio["closed_trades"]
+    ])
+
+    portfolio["equity_curve"].append({
+        "time": str(datetime.utcnow()),
+        "equity": 10000 + total_pnl
+    })
+
+    return portfolio["equity_curve"]
+
+
+# =========================
+# STOCK ENDPOINT
 # =========================
 @app.get("/stock/{ticker}")
 def stock(ticker: str):
