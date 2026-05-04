@@ -24,7 +24,7 @@ hot_stocks = set()
 
 TICKERS = [
     "AAPL","TSLA","NVDA","SPY","MSFT","AMZN","META","GOOGL",
-    "AMD","NFLX","PLTR","INTC","COIN","NIO","RIVN","QQQ","AVGO"
+    "AMD","NFLX","PLTR","INTC","COIN","NIO","RIVN","QQQ","AVGO","RBLX"
 ]
 
 # =========================
