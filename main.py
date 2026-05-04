@@ -1,13 +1,14 @@
-from paper_engine import PaperEngine
-import yfinance as yf
-import pandas as pd
-from alpha_engine import alpha_engine
-from ai_engine import ai_predict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import yfinance as yf
+import pandas as pd
 
-engine = PaperEngine()
+from alpha_engine import alpha_engine
+from ai_engine import ai_predict
+from paper_engine import PaperEngine
+
 app = FastAPI()
+engine = PaperEngine()
 
 app.add_middleware(
     CORSMiddleware,
@@ -17,10 +18,10 @@ app.add_middleware(
 )
 
 # =========================
-# GLOBAL SYSTEM CACHE
+# V10 GLOBAL STATE
 # =========================
-stock_cache = {}
-hot_stocks = set()
+CACHE = {}
+HOT = set()
 
 TICKERS = [
     "AAPL","TSLA","NVDA","SPY","MSFT","AMZN","META","GOOGL",
@@ -28,48 +29,37 @@ TICKERS = [
 ]
 
 # =========================
-# MARKET DATA ENGINE
+# SAFE DATA FETCH
 # =========================
-def get_market_data():
+def fetch_data(ticker):
 
-    data = {}
+    df = yf.download(ticker, period="5d", interval="5m", progress=False)
 
-    for t in TICKERS:
-        try:
-            df = yf.download(t, period="5d", interval="5m", progress=False)
+    if df is None or df.empty:
+        return None
 
-            if df is None or df.empty:
-                continue
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
 
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+    df = df.dropna()
 
-            df = df.dropna()
+    if len(df) < 20:
+        return None
 
-            if len(df) < 20:
-                continue
-
-            data[t] = {"df": df}
-
-        except:
-            continue
-
-    return data
-
+    return df
 
 # =========================
-# SCAN ENGINE
+# SNAPSHOT ENGINE (CORE V10)
 # =========================
-@app.get("/scan")
-def scan():
+def build_snapshot():
 
-    market = get_market_data()
-    signals = alpha_engine(market, ai_predict)
+    market = {}
+    signals = alpha_engine(
+        {t: {"df": fetch_data(t)} for t in TICKERS if fetch_data(t) is not None},
+        ai_predict
+    )
 
-    results = {}
-    market_prices = {}
-
-    for ticker, sig in signals.items():
+    for t, sig in signals.items():
 
         if not isinstance(sig, dict):
             continue
@@ -77,108 +67,65 @@ def scan():
         price = float(sig.get("price", 0))
         confidence = float(sig.get("confidence", 0.5))
 
-        market_prices[ticker] = price
+        # 🧠 hot detection
+        if confidence > 0.80:
+            HOT.add(t)
 
-        # 🔥 HOT STOCK ENGINE
-        if confidence > 0.78:
-            hot_stocks.add(ticker)
-            stock_cache[ticker] = sig
-
-        # 🧠 PAPER TRADE ENGINE
         trade = engine.execute(
-            ticker,
+            t,
             sig.get("signal", "HOLD"),
             price,
             sig.get("options", {})
         )
 
-        # 🧠 AI SCORE
-        ai_score = engine.predict_success(
-            sig.get("signal", "HOLD"),
-            price,
-            sig.get("rsi", 50),
-            sig.get("vwap", price)
-        )
-
-        if trade:
-            trade["ai_score"] = ai_score
-
-        results[ticker] = {
-            "ticker": ticker,
+        market[t] = {
+            "ticker": t,
             "signal": sig.get("signal", "HOLD"),
             "price": price,
-
             "confidence": confidence,
             "ai_up_prob": sig.get("ai_up_prob", 0.5),
             "ai_down_prob": sig.get("ai_down_prob", 0.5),
-
             "rsi": sig.get("rsi", 50),
             "vwap": sig.get("vwap", price),
-            "score": sig.get("score", 0),
-
-            "paper_trade": trade,
-            "ai_trade_score": ai_score,
-
-            "bias": engine.bias,
-            "hot": ticker in hot_stocks
+            "trade": trade,
+            "hot": t in HOT
         }
 
-    engine.update(market_prices)
-
-    return results if results else {
-        "AAPL": {
-            "ticker": "AAPL",
-            "signal": "HOLD",
-            "price": 0,
-            "confidence": 0.5,
-            "ai_up_prob": 0.5,
-            "ai_down_prob": 0.5,
-            "rsi": 50,
-            "vwap": 0,
-            "score": 0,
-            "paper_trade": None,
-            "ai_trade_score": 0.5,
-            "bias": 0,
-            "hot": False
-        }
-    }
+    return market
 
 
 # =========================
-# HOT STOCKS
+# GLOBAL SNAPSHOT (FAST)
 # =========================
+SNAPSHOT = build_snapshot()
+
+
+@app.get("/scan")
+def scan():
+    global SNAPSHOT
+    SNAPSHOT = build_snapshot()
+    return SNAPSHOT
+
+
 @app.get("/hot")
 def hot():
-    return list(hot_stocks)
+    return list(HOT)
 
 
-# =========================
-# ON-DEMAND STOCK
-# =========================
 @app.get("/stock/{ticker}")
 def stock(ticker: str):
 
     ticker = ticker.upper()
 
-    if ticker in stock_cache:
-        return stock_cache[ticker]
+    if ticker in CACHE:
+        return CACHE[ticker]
 
-    try:
-        df = yf.download(ticker, period="5d", interval="5m", progress=False)
+    df = fetch_data(ticker)
 
-        if df is None or df.empty:
-            return {"error": "no data"}
+    if df is None:
+        return {"error": "no data"}
 
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+    sig = alpha_engine({ticker: {"df": df}}, ai_predict)[ticker]
 
-        df = df.dropna()
-
-        sig = alpha_engine({ticker: {"df": df}}, ai_predict)[ticker]
-
-        stock_cache[ticker] = sig
-
-        return sig
-
-    except:
-        return {"error": "failed"}
+    CACHE[ticker] = sig
+    return sig
