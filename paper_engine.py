@@ -1,4 +1,3 @@
-self.hot_flags = set()
 import json
 import os
 import numpy as np
