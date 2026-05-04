@@ -1,7 +1,6 @@
 import numpy as np
 
 def ai_predict(df):
-
     try:
         close = df["Close"].dropna().values
 
@@ -12,37 +11,18 @@ def ai_predict(df):
                 "confidence": 0.0
             }
 
-        # -------------------------
-        # SAFE RETURNS
-        # -------------------------
         returns = np.diff(close)
 
-        # safe slicing
-        last_5 = returns[-5:] if len(returns) >= 5 else returns
-        last_10 = returns[-10:] if len(returns) >= 10 else returns
+        momentum = np.mean(returns[-5:]) if len(returns) >= 5 else 0
+        volatility = np.std(returns[-10:]) if len(returns) >= 10 else 0
 
-        momentum = np.mean(last_5)
-        volatility = np.std(last_10)
-
-        # trend (safe index)
-        trend = close[-1] - close[-10]
+        trend = close[-1] - close[-10] if len(close) >= 10 else 0
 
         score = 0
-
-        # -------------------------
-        # SIGNAL ENGINE
-        # -------------------------
         score += 1 if trend > 0 else -1
         score += 1 if momentum > 0 else -1
+        score += 1 if volatility < np.std(close) * 0.5 else -1
 
-        if volatility < np.std(close) * 0.5:
-            score += 1
-        else:
-            score -= 0.5
-
-        # -------------------------
-        # PROBABILITY MAPPING
-        # -------------------------
         ai_up = 1 / (1 + np.exp(-score))
         ai_down = 1 - ai_up
 
@@ -54,7 +34,7 @@ def ai_predict(df):
             "confidence": float(confidence)
         }
 
-    except Exception:
+    except:
         return {
             "ai_up_prob": 0.5,
             "ai_down_prob": 0.5,
